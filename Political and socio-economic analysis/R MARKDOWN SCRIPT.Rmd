@@ -1,0 +1,1672 @@
+---
+title: "R MARKDOWN SCRIPT"
+output: html_document
+date: "2023-05-30"
+---
+
+```{r}
+rm(list=ls())    # удаление всех объектов
+start.time <- Sys.time()
+cat("\014")	     # команда очистки консоли
+```
+
+Настройки R:
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Подключение модулей и библиотек:
+
+```{r}
+library(purrr)    # набор инструментов функционального программирования для R
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(openxlsx)
+library(ggplot2)
+library(patchwork)
+library(scales)
+```
+
+Доверительная вероятность и уровень значимости:
+
+```{r}
+p_level <- 0.95
+a_level <- 1 - p_level   
+```
+
+# АНАЛИЗ ПОЛИТИЧЕСКИХ И СОЦИАЛЬНО-ЭКОНОМИЧЕСКИХ ХАРАКТЕРИСТИК ГОСУДАРСТВ - ЧЛЕНОВ ООН ЗА 2003 ГОД
+
+## *BLOCK 1. Data import*
+
+### *1.1. WGI dataset*
+
+#### *Политическая стабильность и отсутствие насилия/терроризма (Political Stability)*
+
+Загружаем датасет из файла и выбираем данные за 2003 г.:
+
+```{r}
+# загружаем данные из файла
+WGI_dataset_PS <- read_excel(
+  'data/WGI dataset/wgidataset.xlsx',
+  sheet = 'Political StabilityNoViolence')
+
+# удаляем ненужные строки в начале файла
+WGI_dataset_PS <- WGI_dataset_PS[-c(1:14),]
+
+# выбираем данные за 2003 год
+WGI_dataset_PS_2003 <- WGI_dataset_PS[c(1, 27)]
+
+# изменяем наименования столбцов
+colnames(WGI_dataset_PS_2003)[1] <- 'Country'
+colnames(WGI_dataset_PS_2003)[2] <- 'Political_Stability'
+
+#View(WGI_dataset_PS_2003)
+#str(WGI_dataset_PS_2003)
+#head(WGI_dataset_PS_2003)
+```
+
+#### *Эффективность правительства (Government Effectiveness)*
+
+Загружаем датасет из файла и выбираем данные за 2003 г.:
+
+```{r}
+# загружаем данные из файла
+WGI_dataset_GE <- read_excel(
+  'data/WGI dataset/wgidataset.xlsx',
+  sheet = 'GovernmentEffectiveness')
+
+# удаляем ненужные строки в начале файла
+WGI_dataset_GE <- WGI_dataset_GE[-c(1:14),]
+
+# выбираем данные за 2003 год
+WGI_dataset_GE_2003 <- WGI_dataset_GE[c(1, 27)]
+
+# изменяем наименования столбцов
+colnames(WGI_dataset_GE_2003)[1] <- 'Country'
+colnames(WGI_dataset_GE_2003)[2] <- 'Government_Effectiveness'
+
+#View(WGI_dataset_GE_2003)
+#str(WGI_dataset_GE_2003)
+#head(WGI_dataset_GE_2003)
+```
+
+#### *Верховенство закона (Rule of Law)*
+
+Загружаем датасет из файла и выбираем данные за 2003 г.:
+
+```{r}
+# загружаем данные из файла
+WGI_dataset_RL <- read_excel(
+  'data/WGI dataset/wgidataset.xlsx',
+  sheet = 'RuleofLaw')
+
+# удаляем ненужные строки в начале файла
+WGI_dataset_RL <- WGI_dataset_RL[-c(1:14),]
+
+# выбираем данные за 2003 год
+WGI_dataset_RL_2003 <- WGI_dataset_RL[c(1, 27)]
+
+# изменяем наименования столбцов
+colnames(WGI_dataset_RL_2003)[1] <- 'Country'
+colnames(WGI_dataset_RL_2003)[2] <- 'Rule_of_Law'
+
+#View(WGI_dataset_RL_2003)
+#str(WGI_dataset_RL_2003)
+#head(WGI_dataset_RL_2003)
+```
+
+#### *Объединение данных*
+
+```{r}
+WGI_dataset_2003 <- list(
+  WGI_dataset_PS_2003,
+  WGI_dataset_GE_2003,
+  WGI_dataset_RL_2003)
+WGI_dataset_2003 <- WGI_dataset_2003 %>% reduce(full_join, by='Country')
+
+View(WGI_dataset_2003)
+str(WGI_dataset_2003)
+head(WGI_dataset_2003)
+```
+
+#### *Универсализация названий отдельных государств*
+
+Так как в разных датасетах названия отдельных государств могут отличаться, необходимо выполнить универсализацию их названий для корректного объединения датасетов в единый рабочий датасет.
+
+При универсализации названий государств в каждом датасете создадим словарь (dict) замены названий.
+
+```{r}
+# загрудаем библиотеку для работы с высокопроизводительными контейнерными типами данных (queues, stacks, deques, dicts and ordered dicts)
+# install.packages("collections")
+library(collections)
+
+# формируем словарь замены названий государств
+country_name_replace_dict <- dict(
+  list(
+    'Cape Verde' = 'Cabo Verde',
+    'Congo, Rep.' = 'Congo (Brazzaville)',
+    'Congo, Dem. Rep.' = 'Congo (Kinshasa)',
+    "Korea, Dem. Rep." = "North Korea",
+    'Korea, Rep.' = 'South Korea',
+    'São Tomé and Principe' = 'Sao Tome and Principe',
+    'Syrian Arab Republicn Arab Republic' = 'Syrian Arab Republic',
+    'Türkiye' = 'Turkey'))
+
+# выполняем замену названий государств
+for(elem in country_name_replace_dict$keys())
+  {WGI_dataset_2003$Country <- str_replace(
+    WGI_dataset_2003$Country,
+    elem,
+    country_name_replace_dict$get(elem))}
+```
+
+### *1.2. Freedom House dataset*
+
+Загружаем датасет из файла:
+
+```{r}
+# загружаем данные из файла
+Freedom_House_dataset <- read_excel(
+  'data/Freedom House dataset/Aggregate_Category_and_Subcategory_Scores_FIW_2003-2023.xlsx',
+  sheet = 'FIW03-05')
+#View(Freedom_House_dataset)
+#str(Freedom_House_dataset)
+#head(Freedom_House_dataset)
+```
+
+#### *Политические права (Political Rights) и Гражданские свободы (Civil Liberties)*
+
+Выбираем данные за 2003 г.:
+
+```{r}
+# выбираем данные за 2003 год
+Freedom_House_dataset_PR_CL_2003 <- Freedom_House_dataset[c(1, 3, 6)]
+
+# изменяем наименования столбцов
+colnames(Freedom_House_dataset_PR_CL_2003)[1] <- 'Country'
+colnames(Freedom_House_dataset_PR_CL_2003)[2] <- 'Political_Rights'
+colnames(Freedom_House_dataset_PR_CL_2003)[3] <- 'Civil_Liberties'
+
+#View(Freedom_House_dataset_PR_CL_2003)
+#str(Freedom_House_dataset_PR_CL_2003)
+#head(Freedom_House_dataset_PR_CL_2003)
+```
+
+#### *Универсализация названий отдельных государств*
+
+```{r}
+# формируем словарь замены названий государств
+country_name_replace_dict <- dict(
+  list(
+    'Bahamas' = 'Bahamas, The',
+    'Brunei' = 'Brunei Darussalam',
+    "Cote d’Ivoire" = "Côte d'Ivoire",
+    'Egypt' = 'Egypt, Arab Rep.',
+    'The Gambia' = 'Gambia, The',
+    'Hong Kong' = 'Hong Kong SAR, China',
+    'Iran' = 'Iran, Islamic Rep.',
+    'Kyrgyzstan' = 'Kyrgyz Republic',
+    'Laos' = 'Lao PDR',
+    'Micronesia' = 'Micronesia, Fed. Sts.',
+    'Russia' = 'Russian Federation',
+    'Slovakia'= 'Slovak Republic',
+    'Syria' = 'Syrian Arab Republic',
+    'Venezuela' = 'Venezuela, RB',
+    'Yemen' = 'Yemen, Rep.'))
+
+# выполняем замену названий государств
+for(elem in country_name_replace_dict$keys())
+  {Freedom_House_dataset_PR_CL_2003$Country <- str_replace(
+    Freedom_House_dataset_PR_CL_2003$Country,
+    elem,
+    country_name_replace_dict$get(elem))}
+```
+
+### *1.3. World Bank dataset*
+
+#### *ВВП на душу населения (GDP per capita)*
+
+Загружаем датасет из файла и выбираем данные за 2003 г.:
+
+```{r}
+# загружаем данные из файла
+World_Bank_dataset_GDP <- read_excel(
+  'data/World Bank dataset/API_NY.GDP.PCAP.CD_DS2_en_excel_v2_5454823.xls',
+  sheet = 'Data')
+
+# удаляем ненужные строки в начале файла
+World_Bank_dataset_GDP <- World_Bank_dataset_GDP[-c(1:3),]
+
+# выбираем данные за 2003 год
+World_Bank_dataset_GDP_2003 <- World_Bank_dataset_GDP[c(1, 48)]
+
+# изменяем наименования столбцов
+colnames(World_Bank_dataset_GDP_2003)[1] <- 'Country'
+colnames(World_Bank_dataset_GDP_2003)[2] <- 'GDP_per_capita'
+
+#View(World_Bank_dataset_GDP_2003)
+#str(World_Bank_dataset_GDP_2003)
+#head(World_Bank_dataset_GDP_2003)
+```
+
+#### *Прирост населения (Population growth)*
+
+Загружаем датасет из файла и выбираем данные за 2003 г.:
+
+```{r}
+# загружаем данные из файла
+World_Bank_dataset_PG <- read_excel(
+  'data/World Bank dataset/API_SP.POP.GROW_DS2_en_excel_v2_5454936.xls',
+  sheet = 'Data')
+
+# удаляем ненужные строки в начале файла
+World_Bank_dataset_PG <- World_Bank_dataset_PG[-c(1:3),]
+
+# выбираем данные за 2003 год
+World_Bank_dataset_PG_2003 <- World_Bank_dataset_PG[c(1, 48)]
+
+# изменяем наименования столбцов
+colnames(World_Bank_dataset_PG_2003)[1] <- 'Country'
+colnames(World_Bank_dataset_PG_2003)[2] <- 'Population_growth'
+
+#View(World_Bank_dataset_PG_2003)
+#str(World_Bank_dataset_PG_2003)
+#head(World_Bank_dataset_PG_2003)
+```
+
+#### Объединение данных
+
+```{r}
+World_Bank_dataset_2003 <- full_join(
+  World_Bank_dataset_GDP_2003,
+  World_Bank_dataset_PG_2003,
+  by = 'Country')
+
+View(World_Bank_dataset_2003)
+str(World_Bank_dataset_2003)
+head(World_Bank_dataset_2003)
+```
+
+#### Универсализация названий отдельных государств
+
+```{r}
+# формируем словарь замены названий государств
+country_name_replace_dict <- dict(
+  list(
+    'Congo, Rep.' = 'Congo (Brazzaville)',
+    'Congo, Dem. Rep.' = 'Congo (Kinshasa)',
+    "Cote d'Ivoire" = "Côte d'Ivoire",
+    'Czechia' = 'Czech Republic',
+    "Korea, Dem. People's Rep." = "North Korea",
+    'Korea, Rep.' = 'South Korea',
+    'Turkiye' = 'Turkey'))
+
+# выполняем замену названий государств
+for(elem in country_name_replace_dict$keys())
+  {World_Bank_dataset_2003$Country <- str_replace(
+    World_Bank_dataset_2003$Country,
+    elem,
+    country_name_replace_dict$get(elem))}
+```
+
+### *1.4. Объединяем данные в общий датасет*
+
+```{r}
+dataset_primary <- list(
+  WGI_dataset_2003,
+  Freedom_House_dataset_PR_CL_2003,
+  World_Bank_dataset_2003)
+dataset_primary <- dataset_primary %>% reduce(full_join, by='Country')
+
+View(dataset_primary)
+str(dataset_primary)
+head(dataset_primary)
+```
+
+### 1.5. *Сохраняем необработанный датасет*
+
+```{r}
+# сохраняем в csv-файл
+write.csv(dataset_primary, 'dataset.csv', row.names = FALSE)
+```
+
+## *BLOCK 2. Data filtration and cleansing*
+
+### *2.1. Выборка государств - членов ООН*
+
+Сформированный набор данных включает все государства, учтенные в исходных наборах данных - 289 записей. Нам необходимо включить в рабочий набор данных для анализа только государств - членов ООН, список которых приведен на сайте ООН ([https://www.un.org/en/about-us/member-states)](https://www.un.org/en/about-us/member-states)) - 193 государства.
+
+Так как мы анализируем данные за 2003 г., то для корректности анализа необходимо исключить государства, вошедшие в состав членов ООН в период с 2003 г. по 2023 г. (не являющиеся членами ООН по состоянию на 2003 г.) ([https://en.wikipedia.org/wiki/Member_states_of_the_United_Nations):](https://en.wikipedia.org/wiki/Member_states_of_the_United_Nations):)
+
+-   Черногория (Montenegro) - дата вступления в ООН 28.06.2006;
+
+-   Южный Судан (South Sudan) - дата вступления в ООН 14.07.2011.
+
+```{r}
+# формируем список государств - членов ООН
+country_UN_list <- c(
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
+  
+  'Bahamas, The', 'Bahrain','Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei Darussalam', 'Bulgaria', 'Burkina Faso', 'Burundi',
+  
+  'Cabo Verde', 'Cambodia', 'Cameroon', 'Canada', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia', 'Comoros', 'Congo (Brazzaville)', 'Congo (Kinshasa)', 'Costa Rica', "Côte d'Ivoire", 'Croatia', 'Cuba', 'Cyprus', 'Czech Republic',
+  
+  'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic',
+  
+  'Ecuador', 'Egypt, Arab Rep.', 'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia',
+  
+  'Fiji', 'Finland', 'France', 
+  
+  'Gabon', 'Gambia, The', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana',
+  
+  'Haiti', 'Honduras', 'Hungary',
+  
+  'Iceland', 'India', 'Indonesia', 'Iran, Islamic Rep.', 'Iraq', 'Ireland', 'Israel', 'Italy', 
+  
+  'Jamaica', 'Japan', 'Jordan', 
+  
+  'Kazakhstan', 'Kenya', 'Kiribati', 'Kuwait', 'Kyrgyz Republic',
+  
+  'Lao PDR', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg',
+  
+  'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania', 'Mauritius', 'Mexico', 'Micronesia, Fed. Sts.', 'Moldova', 'Monaco', 'Mongolia', 
+  #'Montenegro',
+  'Morocco', 'Mozambique', 'Myanmar', 
+  
+  'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 
+  
+  'Oman',
+  
+  'Pakistan', 'Palau', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 
+  
+  'Qatar', 
+  
+  'Romania', 'Russian Federation', 'Rwanda',
+  
+  'St. Kitts and Nevis', 'St. Lucia', 'St. Vincent and the Grenadines', 'Samoa', 'San Marino', 'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovak Republic', 'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 
+  #'South Sudan', 
+  'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syrian Arab Republic', 
+  
+  'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia', 'Turkey', 'Turkmenistan', 'Tuvalu',
+  
+  'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan',
+  
+  'Vanuatu', 'Venezuela, RB', 'Vietnam',
+  
+  'Yemen, Rep.', 
+  
+  'Zambia', 'Zimbabwe')
+
+# выборка данных
+dataset_primary_UN <- subset(dataset_primary, dataset_primary$Country %in% country_UN_list)
+
+View(dataset_primary_UN)
+str(dataset_primary_UN)
+head(dataset_primary_UN)
+```
+
+### *2.2. Удаление пропущенных значений*
+
+Так как в датасете для отдельных записей имеются пропущенные значения, необходимо выполнить удаление подобных записей.
+
+При этом пропуски в датасете (#N/A)имеют **строковый тип**. Так как язык R имеет широкий набор встроенных инструментов для работы с пропусками (которые имеют специфический тип NA), то мы произведем замену **#N/A** на **NA** и далее будем пользоваться этими инструментами:
+
+```{r}
+dataset_processed <- dataset_primary_UN
+dataset_processed[dataset_processed == '#N/A'] <- NA
+View(dataset_processed)
+str(dataset_processed)
+head(dataset_processed)
+```
+
+Для визуализации пропущенных значений воспользуемся функцией **aggr** библиотеки **VIM**, а для подсчета доли пропущенных значений - функцией **miss_var_summary** библиотеки **naniar**:
+
+```{r}
+#install.packages('VIM')
+library('VIM')
+X <- dataset_processed
+labels_list <- c('Country', 'PS', 'GE', 'RL', 'PR', 'CL', 'GDP', 'PG')
+aggr(X, prop=FALSE, numbers=TRUE, labels=labels_list)
+
+# install.packages("naniar")
+library(naniar)
+miss_var_summary(X)
+```
+
+Удалим пропущенные значения:
+
+```{r}
+dataset_processed <- na.omit(dataset_processed)
+#View(dataset_processed)
+#str(dataset_processed)
+#head(dataset_processed)
+```
+
+Видим, что после удаления пропущенных значений число записей в датасете сократилось со 191 до 174.
+
+### *2.3. Преобразование данных к числовому типу*
+
+Видим, что данные в нашем датасете относятся к строковому типу (chr). Их необходимо преобразовать к числовому типу:
+
+```{r}
+# преобразуем все данные к числовому типу, используя функцию map_df библиотеки purrr
+numeric_cols = c('Political_Stability', 'Government_Effectiveness', 'Rule_of_Law', 'Political_Rights', 'Civil_Liberties', 'GDP_per_capita', 'Population_growth')
+
+dataset_processed[numeric_cols] <- map_df(dataset_processed[numeric_cols], as.numeric)
+
+View(dataset_processed)
+str(dataset_processed)
+head(dataset_processed)
+```
+
+### *2.4. Сохраняем обработанный датасет*
+
+```{r}
+# сохраняем в переменную
+dataset <- dataset_processed
+View(dataset)
+str(dataset)
+head(dataset)
+
+# сохраняем в csv-файл
+write.csv(dataset, 'dataset_processed.csv', row.names = FALSE)
+```
+
+```{r}
+# переменные
+X1 = dataset$Political_Stability
+X2 = dataset$Government_Effectiveness
+X3 = dataset$Rule_of_Law
+X4 = dataset$Political_Rights
+X5 = dataset$Civil_Liberties
+X6 = dataset$GDP_per_capita
+X7 = dataset$Population_growth
+```
+
+### *2.5. Выборка данных по частям света (Parts of world)*
+
+Для дальнейшего анализа необходимо сформировать выборки из рабочего датасета, соответствующие отдельным частям света (Азия, Африка, Европа, Северная Америка, Южная Америка, Австралия и Океания).
+
+#### *Азия (Asia)*
+
+Перечень государств: <https://www.worldometers.info/geography/7-continents/asia/>
+
+```{r}
+# список государств
+country_list_Asia <- c(
+  'Afghanistan', 'Armenia', 'Azerbaijan',
+  'Bahrain', 'Bangladesh', 'Bhutan', 'Brunei Darussalam',
+  'Cambodia', 'China', 'Cyprus',
+  'Georgia',
+  'Hong Kong SAR, China', 
+  'India', 'Indonesia','Iran, Islamic Rep.', 'Iraq', 'Israel',
+  'Japan', 'Jordan',
+  'Kazakhstan', 'Kuwait', 'Kyrgyz Republic',
+  'Lao PDR', 'Lebanon', 
+  'Macao', 'Malaysia', 'Maldives', 'Mongolia', 'Myanmar',
+  'Nepal', 'North Korea',
+  'Oman', 
+  'Pakistan', 'Philippines',
+  'Qatar',
+  'Saudi Arabia', 'Singapore', 'South Korea', 'Sri Lanka', 'Syrian Arab Republic', 'State of Palestine',
+  'Tajikistan', 'Taiwan', 'Thailand', 'Timor-Leste', 'Turkey', 'Turkmenistan',
+  'United Arab Emirates', 'Uzbekistan',
+  'Vietnam',
+  'Yemen, Rep.')
+
+# выборка данных
+dataset_Asia <- subset(dataset, dataset$Country %in% country_list_Asia)
+View(dataset_Asia)
+str(dataset_Asia)
+head(dataset_Asia)
+```
+
+#### *Африка (**Africa)***
+
+Перечень государств: <https://www.worldometers.info/geography/7-continents/africa/>
+
+```{r}
+# список государств
+country_list_Africa <- c(
+  'Algeria', 'Angola',
+  'Benin' ,'Botswana', 'Burkina Faso', 'Burundi',
+  'Cabo Verde', 'Cameroon', 'Central African Republic', 'Chad', 'Comoros', 'Congo (Brazzaville)', 'Congo (Kinshasa)', "Côte d'Ivoire",
+  'Djibouti',
+  'Egypt, Arab Rep.', 'Equatorial Guinea', 'Eritrea', 'Eswatini', 'Ethiopia',
+  'Gabon', 'Gambia, The', 'Ghana', 'Guinea', 'Guinea-Bissau',
+  'Kenya',
+  'Lesotho', 'Liberia', 'Libya',
+  'Madagascar', 'Malawi', 'Mali', 'Mauritania', 'Mauritius', 'Mayotte', 'Morocco', 'Mozambique',
+  'Namibia', 'Niger', 'Nigeria',
+  'Réunion', 'Rwanda',
+  'Saint Helena', 'Sao Tome and Principe', 'Senegal', 'Seychelles', 'Sierra Leone', 'Somalia', 'South Africa', 'South Sudan', 'Sudan',
+  'Tanzania', 'Togo', 'Tunisia',
+  'Uganda',
+  'Western Sahara',
+  'Zambia', 'Zimbabwe')
+
+# выборка данных
+dataset_Africa <- subset(dataset, dataset$Country %in% country_list_Africa)
+View(dataset_Africa)
+str(dataset_Africa)
+head(dataset_Africa)
+```
+
+#### *Европа (Europe)*
+
+Перечень государств: <https://www.worldometers.info/geography/7-continents/europe/>
+
+```{r}
+# список государств
+country_list_Europe <- c(
+  'Albania', 'Andorra', 'Austria',
+  'Belarus', 'Belgium', 'Bosnia and Herzegovina', 'Bulgaria',
+  'Channel Islands', 'Croatia', 'Czech Republic',
+  'Denmark',
+  'Estonia',
+  'Faeroe Islands', 'Finland', 'France',
+  'Germany', 'Gibraltar', 'Greece',
+  'Holy See', 'Hungary',
+  'Iceland', 'Ireland', 'Isle of Man', 'Italy',
+  'Latvia', 'Liechtenstein', 'Lithuania', 'Luxembourg',
+  'Malta', 'Moldova', 'Monaco', 'Montenegro',
+  'Netherlands', 'North Macedonia', 'Norway',
+  'Poland', 'Portugal',
+  'Romania', 'Russian Federation',
+  'San Marino', 'Serbia', 'Slovak Republic', 'Slovenia', 'Spain', 'Sweden', 'Switzerland',
+  'Ukraine', 'United Kingdom')
+
+# выборка данных
+dataset_Europe <- subset(dataset, dataset$Country %in% country_list_Europe)
+View(dataset_Europe)
+str(dataset_Europe)
+head(dataset_Europe)
+```
+
+#### ***Северная Америка (North America)***
+
+Перечень государств: <https://www.worldometers.info/geography/7-continents/north-america/>
+
+```{r}
+# список государств
+country_list_North_America <- c(
+  'Anguilla', 'Antigua and Barbuda', 'Aruba',
+  'Bahamas, The', 'Barbados', 'Belize', 'Bermuda', 'British Virgin Islands',
+  'Canada', 'Caribbean Netherlands', 'Cayman Islands', 'Costa Rica', 'Cuba', 'Curaçao',
+  'Dominican Republic', 'Dominica',
+  'El Salvador',
+  'Greenland', 'Grenada', 'Guadeloupe', 'Guatemala',
+  'Haiti', 'Honduras',
+  'Jamaica',
+  'Martinique', 'Mexico', 'Montserrat',
+  'Nicaragua',
+  'Panama', 'Puerto Rico',
+  'Saint Barthélemy', 'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Martin', 'Saint Pierre and Miquelon', 'Saint Vincent and the Grenadines', 'Sint Maarten',
+  'Trinidad and Tobago', 'Turks and Caicos Islands',
+  'United States', 'United States Virgin Islands')
+
+# выборка данных
+dataset_North_America <- subset(
+  dataset, dataset$Country %in% country_list_North_America)
+View(dataset_North_America)
+str(dataset_North_America)
+head(dataset_North_America)
+```
+
+#### ***Южная Америка (South America)***
+
+Перечень государств: <https://www.worldometers.info/geography/7-continents/south-america/>
+
+```{r}
+# список государств
+country_list_South_America <- c(
+  'Argentina',
+  'Bolivia', 'Brazil',
+  'Chile', 'Colombia',
+  'Ecuador',
+  'Guyana',
+  'Falkland Islands', 'French Guiana',
+  'Paraguay', 'Peru',
+  'Suriname',
+  'Uruguay',
+  'Venezuela, RB')
+
+# выборка данных
+dataset_South_America <- subset(
+  dataset, dataset$Country %in% country_list_South_America)
+View(dataset_South_America)
+str(dataset_South_America)
+head(dataset_South_America)
+```
+
+#### ***Австралия/Океания (Australia/Oceania)***
+
+Перечень государств: <https://www.worldometers.info/geography/7-continents/australia/oceania/>
+
+```{r}
+# список государств
+country_list_Australia_Oceania <- c(
+  'American Samoa', 'Australia',
+  'Cook Islands',
+  'Fiji', 'French Polynesia',
+  'Guam',
+  'Kiribati',
+  'Marshall Islands', 'Micronesia',
+  'Nauru', 'New Caledonia', 'New Zealand', 'Niue', 'Northern Mariana Islands',
+  'Palau', 'Papua New Guinea',
+  'Samoa', 'Solomon Islands',
+  'Tuvalu', 'Tokelau', 'Tonga',
+  'Vanuatu',
+  'Wallis and Futuna Islands')
+
+# выборка данных
+dataset_Australia_Oceania <- subset(
+  dataset, dataset$Country %in% country_list_Australia_Oceania)
+View(dataset_Australia_Oceania)
+str(dataset_Australia_Oceania)
+head(dataset_Australia_Oceania)
+```
+
+## *BLOCK 3. Script for building visualizations*
+
+### *Plot 1. Histograms combined in one line*
+
+Необходимо построить две гистограммы, объединенные в одну строку с наложенными на них кривыми распределения, показывающими индекс политической стабильности (Political_Stability) и индекс верховенства закона (Rule_of_Law) в государствах ООН за данный год.
+
+```{r}
+X1 = dataset$Political_Stability
+X2 = dataset$Rule_of_Law
+
+par(mfrow = c(1, 2),
+    #font.main=4,
+    #cex.axis=1,
+    #pin=c(2,2)
+    no.readonly=TRUE)
+
+hist(X1,
+     breaks = 'Sturges',    # Sturges, scott, FD
+     freq = FALSE,
+     col = 'lightblue',
+     xlab = '',
+     ylab = 'Dencity',
+     main = 'Political Stability')
+lines(density(X1), col = 'red', lwd = 2)
+#plot(density(X, bw = 0.8))
+
+hist(X2,
+     breaks = 'Sturges',    # Sturges, scott, FD
+     freq = FALSE,
+     col = 'lightblue',
+     xlab = '',
+     ylab = 'Dencity',
+     main = 'Rule of Law')
+lines(density(X2), col = 'red', lwd = 2)
+
+mtext('An indicator of political stability and the rule of law in the UN Member States', side = 3, line = -1, outer = TRUE)
+```
+
+### *Plot 2. Graph combining boxplots*
+
+Необходимо построить один график с 6 диаграммами размаха, иллюстрирующий распределение индекса политических прав в странах 6 частей света (Азия, Африка, Европа, Северная Америка, Южная Америка, Австралия и Океания).
+
+```{r fig.width=7, fig.height=9}
+# список с цветовой палитрой
+#color_list = c('#A6CEE3', '#1F78B4', '#B2DF8A', '#33A02C', '#FB9A99', '#E31A1C')
+color_list = c('#1F78B4', '#33A02C', '#E31A1C', '#FF7F00', '#6A3D9A', '#B15928')
+
+#Asia
+X1 = dataset_Asia$Rule_of_Law
+
+graph_Asia <- ggplot(
+  dataset_Asia, aes(x = X1, y='')) + 
+  geom_boxplot(fill=color_list[1]) + xlim(-2.5, 2.5) + 
+  geom_jitter(width=0.15) +
+  labs(title = '', 
+       x = '', y = 'Asia')
+
+# Africa
+X2 = dataset_Africa$Rule_of_Law
+
+graph_Africa <- ggplot(
+  dataset_Africa, aes(x = X2, y='')) + 
+  geom_boxplot(fill=color_list[2]) + xlim(-2.5, 2.5) + 
+  geom_jitter(width=0.15) +
+  labs(x = '', y = 'Africa')
+
+# Europe
+X3 = dataset_Europe$Rule_of_Law
+
+graph_Europe <- ggplot(
+  dataset_Europe, aes(x = X3, y='')) + 
+  geom_boxplot(fill=color_list[3]) + xlim(-2.5, 2.5) + 
+  geom_jitter(width=0.15) +
+  labs(x = '', y = 'Europe')
+
+# North_America
+X4 = dataset_North_America$Rule_of_Law
+
+graph_North_America <- ggplot(
+  dataset_North_America, aes(x = X4, y='')) + 
+  geom_boxplot(fill=color_list[4]) + xlim(-2.5, 2.5) + 
+  geom_jitter(width=0.15) +
+  labs(x = '', y = 'North America')
+
+# South_America
+X5 = dataset_South_America$Rule_of_Law
+
+graph_South_America <- ggplot(
+  dataset_South_America, aes(x = X5, y='')) + 
+  geom_boxplot(fill=color_list[5]) + xlim(-2.5, 2.5) + 
+  geom_jitter(width=0.15) +
+  labs(x = '', y = 'South America')
+
+# Australia/Oceania
+X6 = dataset_Australia_Oceania$Rule_of_Law
+
+graph_Australia_Oceania <- ggplot(
+  dataset_Australia_Oceania, aes(x = X6, y='')) + 
+  geom_boxplot(fill=color_list[6]) + xlim(-2.5, 2.5) + 
+  geom_jitter(width=0.15) +
+  labs(title = '', 
+       x = 'Rule of Law', y = 'Australia_Oceania')
+
+# Total
+#dev.new(width=5, height=15, noRStudioGD = TRUE)
+graph_Asia / graph_Africa / graph_Europe / graph_North_America / graph_South_America / graph_Australia_Oceania +  
+  plot_annotation(title = 
+    'Distribution of the Rule of Law indicator in the countries of 6 parts of the world') & 
+     theme(plot.title = element_text(hjust = 0.5, size = 12),
+          axis.title = element_text(size = 9),
+          axis.text = element_text(size = 7))
+          
+```
+
+### *Plot 3. One OR 5 unified scatterplots*
+
+Необходимо построить один график с 6 отдельными диаграмм рассеяния, показывающих зависимость эффективности государственного управления в 6 частях мира от ВВП на душу населения.
+
+```{r fig.width=7, fig.height=8}
+#options(repr.plot.width = 15, repr.plot.height =15)
+
+#Asia
+X1 = dataset_Asia$GDP_per_capita
+Y1 = dataset_Asia$Government_Effectiveness
+
+graph_Asia <- ggplot(
+  dataset_Asia, aes(X1, Y1)) + 
+  geom_point(color=color_list[1]) +
+  labs(title = 'Asia', x = 'GDP per capita', y = 'Government Effectiveness')
+
+# Africa
+X2 = dataset_Africa$GDP_per_capita
+Y2 = dataset_Africa$Government_Effectiveness
+
+graph_Africa <- ggplot(
+  dataset_Africa, aes(X2, Y2)) + 
+  geom_point(color=color_list[2]) +
+  labs(title = 'Africa', x = 'GDP per capita', y = 'Government Effectiveness')
+
+# Europe
+X3 = dataset_Europe$GDP_per_capita
+Y3 = dataset_Europe$Government_Effectiveness
+
+graph_Europe <- ggplot(
+  dataset_Europe, aes(X3, Y3)) + 
+  geom_point(color=color_list[3]) +
+  labs(title = 'Europe', x = 'GDP per capita', y = 'Government Effectiveness')
+
+# North_America
+X4 = dataset_North_America$GDP_per_capita
+Y4 = dataset_North_America$Government_Effectiveness
+
+graph_North_America <- ggplot(
+  dataset_North_America, aes(X4, Y4)) + 
+  geom_point(color=color_list[4]) +
+  labs(title = 'North America', x = 'GDP per capita', y = 'Government Effectiveness')
+
+# South_America
+X5 = dataset_South_America$GDP_per_capita
+Y5 = dataset_South_America$Government_Effectiveness
+
+graph_South_America <- ggplot(
+  dataset_South_America, aes(X5, Y5)) + 
+  geom_point(color=color_list[5]) +
+  labs(title = 'South America', x = 'GDP per capita', y = 'Government Effectiveness')
+
+# Australia/Oceania
+X6 = dataset_Australia_Oceania$GDP_per_capita
+Y6 = dataset_Australia_Oceania$Government_Effectiveness
+
+graph_Australia_Oceania <- ggplot(
+  dataset_Australia_Oceania, aes(X6, Y6)) + 
+  geom_point(color=color_list[6]) +
+  labs(title = 'Australia/Oceania', x = 'GDP per capita', y = 'Government Effectiveness')
+
+# Total
+(graph_Asia + graph_Africa) / 
+  (graph_Europe + graph_North_America) / 
+  (graph_South_America + graph_Australia_Oceania) +  
+  plot_annotation(title = 'Dependence of the Government Effectiveness on GDP per capita') & 
+    theme(plot.title = element_text(hjust = 0.5, size = 12),
+          axis.title = element_text(size = 9),
+          axis.text = element_text(size = 7))
+```
+
+## *BLOCK 4. Script for building descriptive statistics table*
+
+```{r}
+summary(dataset[c('Government_Effectiveness',
+                  'Political_Stability',
+                  'Rule_of_Law')])
+cat('\n')
+
+summary(dataset[c('Civil_Liberties',
+                  'GDP_per_capita',
+                  'Population_growth')])
+```
+
+```{r}
+# install.packages('pastecs')
+library('pastecs')
+descriptive_stats_of_dataset <- stat.desc(
+  dataset,
+  #basic=TRUE,
+  #desc=TRUE,
+  norm=TRUE,
+  p=p_level)
+View(descriptive_stats_of_dataset)
+str(descriptive_stats_of_dataset)
+```
+
+Сохраняем результаты вывода в Excel:
+
+```{r}
+# добавляем столбец с наименованиями показателей и перемещаем его на первою позицию
+descriptive_stats_of_dataset['Indicator'] <- 
+  c('nbr.val', 'nbr.null', 'nbr.na', 'min', 'max', 'range', 'sum', 'median', 'mean', 'SE.mean', 'CI.mean', 'var', 'std.dev', 'coef.var', 'skewness', 'skew.2SE', 'kurtosis', 'kurt.2SE', 'normtest.W', 'normtest.p')
+
+descriptive_stats_of_dataset <- descriptive_stats_of_dataset %>% dplyr::select(Indicator, everything())
+
+# сохраняем в файл
+write.xlsx(descriptive_stats_of_dataset,
+           file = 'result_output.xlsx',
+           sheetName = 'descriptive_stats_of_dataset')
+```
+
+## *BLOCK 5. Script for building table with three regressions*
+
+### *Model 1*
+
+```{r}
+# переменные
+GE = dataset$Government_Effectiveness
+PS = dataset$Political_Stability
+RL = dataset$Rule_of_Law
+PR = dataset$Political_Rights
+CL = dataset$Civil_Liberties
+GDP = dataset$GDP_per_capita
+PG = dataset$Population_growth
+```
+
+```{r}
+# построение регрессионной модели
+model_1 <- lm(GE ~ PS + RL + PR + CL + GDP + PG)
+summary(model_1)
+cat("Akaike information criterion (AIC) = ", AIC(model_1), '\n')
+cat("Bayes Information Criterion (BIC) = ", BIC(model_1))
+```
+
+**Выводы по модели:**
+
+1.  Модель обеспечивает хорошее качество аппроксимации: **Adjusted R-squared: 0.9144**, модель объясняет 91.44% вариации результативного признака **GE**.
+2.  Проверка гипотезы о значимости коэффициента **R2** (по F-критерию): **гипотеза принимается** (т.к. **p-value: \< 2.2e-16**).
+3.  Проверка гипотезы о значимости коэффициентов регрессии (по t-критерию):
+    -   **значимыми** являются коэффициенты при переменных **RL**, **GDP**, **PG** (т.к. **Pr(\>\|t\|) \<= 0.05**);
+
+    -   **незначимыми** являются свободный член (**Intercept**), а также коэффициенты при переменных **PS, PR, CL** (т.к. **Pr(\>\|t\|) \> 0.05**).
+4.  Направление связи между результативным признаком и независимыми переменными:
+    -   положительное - для **RL**, **CL**, **GDP**;
+
+    -   отрицательное - для **PS**, **PR**, **PG**.
+
+Примечание: отрицательная связь между **GE** и **PS**, **PR** противоречит здравому смыслу, однако это объяснимо, т.к. коэффициенты регрессии при этих переменных являются незначимыми.
+
+5.  Анализ распределения остатков (**Residuals**) свидетельствует о левосторонней асимметрии (т.к. **\|1Q\|\>\|3Q\|**), т.е. о возможном отклонении распределения остатков от нормального закона.
+
+```{r fig.width=7, fig.height=7}
+# графики
+par(mfrow = (c(2, 2)))
+plot(model_1)
+```
+
+**Выводы по графикам:**
+
+1.  Графическая проверка данных на **гетероскедастичность**: точки на графике **"Невязки и подогнанные значения"** (**Residuals vs Fitted**) разбросаны случайным образом без определенного шаблона, что свидетельствует об отсутствии **гетероскедастичности**.
+2.  Графическая проверка данных на **нормальность**: точки на графике **Q-Q Residuals** отклоняются от прямой линии, что свидетельствует о возможном **отклонении** распределения остатков от нормального закона.
+3.  Графическая проверка данных на наличие выбросов: точки на графике **Scale-Location** расположены примерно в центре, однако на графике зависимости невязок от "показателя напряженности" (**Residuals vs Leverage**) имеются точки вблизи границы расстояния Кука (**Cook's distance**), что свидетельствует о возможном наличии **влиятельных наблюдений (Influential observations)**.
+
+### *Model 2*
+
+```{r}
+# построение регрессионной модели
+model_2 <- lm(GE ~ PS + RL + PR + GDP + PG)
+summary(model_2)
+cat("Akaike information criterion (AIC) = ", AIC(model_2), '\n')
+cat("Bayes Information Criterion (BIC) = ", BIC(model_2))
+```
+
+**Выводы по модели:**
+
+1.  Модель обеспечивает хорошее качество аппроксимации: **Adjusted R-squared: 0.9148**, модель объясняет 91.48% вариации результативного признака **GE**.
+2.  Проверка гипотезы о значимости коэффициента **R2** (по F-критерию): **гипотеза принимается** (т.к. **p-value: \< 2.2e-16**).
+3.  Проверка гипотезы о значимости коэффициентов регрессии (по t-критерию):
+    -   **значимыми** являются коэффициенты при переменных **RL**, **GDP**, **PG** (т.к. **Pr(\>\|t\|) \<= 0.05**);
+
+    -   **незначимыми** являются свободный член (**Intercept**), а также коэффициенты при переменных **PS, PR** (т.к. **Pr(\>\|t\|) \> 0.05**).
+4.  Направление связи между результативным признаком и независимыми переменными:
+    -   положительное - для **RL**, **PR**, **GDP**;
+
+    -   отрицательное - для **PS**, **PG**.
+
+Примечание:
+
+-   отрицательная связь между **GE** и **PS** противоречит здравому смыслу, однако это объяснимо, т.к. коэффициент регрессии при этой переменной является незначимым;
+
+-   обратим внимание, что исключение из модели переменной **CL** в модели **model_2** (по сравнению с моделью **model_1**) привело к тому, что направление связи между **GE** и **PR** изменилось с отрицательного на положительное - это объяснимо, т.к. коэффициент регрессии при **PR** является незначимым.
+
+5.  Анализ распределения остатков (**Residuals**): левосторонняя асимметрия в модели **model_2** (по сравнению с моделью **model_1**) уменьшилась.
+
+```{r fig.width=7, fig.height=7}
+# графики
+par(mfrow = (c(2, 2)))
+plot(model_2)
+```
+
+**Выводы по графикам:** графический анализ не показывает существенных изменений в модели **model_2** (по сравнению с моделью **model_1**).
+
+### *Model 3*
+
+```{r}
+# построение регрессионной модели
+model_3 <- lm(GE ~ PS + RL + GDP + PG)
+summary(model_3)
+
+cat("Akaike information criterion (AIC) = ", AIC(model_3), '\n')
+cat("Bayes Information Criterion (BIC) = ", BIC(model_3))
+```
+
+**Выводы по модели:**
+
+1.  Модель обеспечивает хорошее качество аппроксимации: **Adjusted R-squared: 0.9149**, модель объясняет 91.49% вариации результативного признака **GE**.
+2.  Проверка гипотезы о значимости коэффициента **R2** (по F-критерию): **гипотеза принимается** (т.к. **p-value: \< 2.2e-16**).
+3.  Проверка гипотезы о значимости коэффициентов регрессии (по t-критерию):
+    -   **значимыми** являются коэффициенты при переменных **RL**, **GDP**, **PG** (т.к. **Pr(\>\|t\|) \<= 0.05**);
+
+    -   **незначимыми** являются свободный член (**Intercept**), а также коэффициенты при переменных **PS** (т.к. **Pr(\>\|t\|) \> 0.05**).
+4.  Направление связи между результативный признаком и независимыми переменными:
+    -   положительное - для **RL**, **GDP**;
+
+    -   отрицательное - для **PS**, **PG**.
+
+Примечание: отрицательная связь между **GE** и **PS** противоречит здравому смыслу, однако это объяснимо, т.к. коэффициент регрессии при этой переменной является незначимым.
+
+5.  Анализ распределения остатков (**Residuals**): левосторонняя асимметрия в модели **model_3** несколько выше по сравнению с моделью **model_2,** но меньше, чем по сравнению с моделью **model_1.**
+
+```{r fig.width=7, fig.height=7}
+# графики
+par(mfrow = (c(2, 2)))
+plot(model_3)
+```
+
+**Выводы по графикам:** графический анализ не показывает существенных изменений в модели **model_3** (по сравнению с моделями **model_1** и **model_2**.
+
+### *Сравнение моделей*
+
+Сведем в общую таблицу метрики качества регрессионных моделей:
+
+-   Residual standard error (**RSE**);
+
+-   R2 adjusted (**R2_adj**);
+
+-   Akaike information criterion (**AIC**);
+
+-   Bayes Information Criterion (**BIC**).
+
+```{r}
+model_name_list <- c('model_1', 'model_2', 'model_3')
+
+RSE_list <- c(summary(model_1)$sigma,
+              summary(model_2)$sigma,
+              summary(model_3)$sigma)
+
+R2_adj_list <- c(summary(model_1)$adj.r.squared,
+                 summary(model_2)$adj.r.squared,
+                 summary(model_3)$adj.r.squared)
+
+AIC_list <- c(AIC(model_1),
+              AIC(model_2),
+              AIC(model_3))
+
+BIC_list <- c(BIC(model_1),
+              BIC(model_2),
+              BIC(model_3))
+
+regression_result <- data.frame(
+  model_name = model_name_list,
+  RSE = RSE_list,
+  R2_adj = R2_adj_list,
+  AIC = AIC_list,
+  BIC = BIC_list)
+
+regression_result
+
+#View(descriptive_stats_of_dataset)
+#str(descriptive_stats_of_dataset)
+```
+
+**Вывод:** видим, что все 3 модели обеспечивают примерно одинаковое качество аппроксимации (**RSE, R2_adj**), поэтому исходя из критерия минимума **AIC** и **BIC** в качестве наилучшей модели выбираем **model_3.**
+
+### *Проверка нормальности распределения остатков наилучшей модели*
+
+#### *Пользовательская функция для проверки нормальности*
+
+Создадим пользовательскую функцию **norm_check** для реализации тестов на нормальный закон распределения:
+
+```{r}
+# создадим пользовательскую функцию
+norm_check = function(data, p_level=0.95)
+  {
+  library(nortest)
+  
+  test_list <- c(
+    "Shapiro-Wilk",
+    "Anderson-Darling",
+    "Cramer-von Mises",
+    "Lilliefors (Kolmogorov-Smirnov)",
+    "Pearson chi-square",
+    "Shapiro-Francia")
+  
+  p_level <- p_level
+  a_level <- 1 - p_level
+  
+  statistic_list <- c(
+    shapiro.test(X)$statistic,
+    ad.test(X)$statistic,
+    cvm.test(X)$statistic,
+    lillie.test(X)$statistic,
+    pearson.test(X)$statistic,
+    sf.test(X)$statistic)
+  
+  a_calc_list <- c(
+    shapiro.test(X)$p.value,
+    ad.test(X)$p.value,
+    cvm.test(X)$p.value,
+    lillie.test(X)$p.value,
+    pearson.test(X)$p.value,
+    sf.test(X)$p.value)
+  
+  result <- data.frame(
+    normality_test = test_list,
+    #p_level = p_level,
+    #a_level = a_level,
+    statistic = statistic_list,
+    a_calc <- a_calc_list,
+    #conclusion <- if(a_calc >= a_level) 'gaussian' else 'not gaussian'
+    conclusion <- sapply(
+      a_calc_list,
+      function(a) if(a >= a_level) 'gaussian' else 'not gaussian')
+    )
+  colnames(result)[3] <- 'a_calc'
+  colnames(result)[4] <- 'conclusion'
+  
+  return(result)
+  }
+```
+
+#### *Визуализация распределения остатков*
+
+```{r}
+X <- resid(model_3)
+
+h <- hist(X,
+     breaks = 'Sturges',    # Sturges, scott, FD
+     #freq = FALSE,
+     col = 'lightblue',
+     xlab = '',
+     ylab = 'Dencity',
+     main = 'Residuals')
+#lines(density(X), col = 'red', lwd = 2)
+xfit <- seq(min(X), max(X), length=40)
+yfit <- dnorm(xfit, mean=mean(X), sd=sd(X))
+yfit <- yfit*diff(h$mids[1:2])*length(X)
+lines(xfit, yfit, col='red', lwd=2)
+box()
+```
+
+#### *Визуализация распределения остатков Стьюдента*
+
+```{r}
+residplot <- function(fit, nbreaks=10)
+  {z <- rstudent(fit)
+  hist(
+    z,
+    breaks=nbreaks,
+    freq=FALSE,
+    xlab='studentized residuals',
+    main='Residuals')
+  rug(jitter(z), col='brown')
+  curve(dnorm(x, 
+              mean=mean(z),
+              sd=sd(z)),
+        add=TRUE,
+        col='blue',
+        lwd=2)
+  lines(
+    density(z)$x, density(z)$y,
+    col='red',
+    lwd=2, lty=2)
+  legend(
+    'topright',
+    legend = c('Normal curve',
+               'Kernel density estimate'),
+    lty=1:2, col=c('blue', 'red'), cex=.7)
+  }
+
+residplot(model_3)
+```
+
+#### *Проверка гипотезы о нормальности распределения остатков*
+
+```{r}
+# проверка нормальности распределения
+norm_check(X)
+```
+
+**Вывод:** гипотеза о нормальности распределения остатков **принимается**.
+
+### *Визуализация прогноза с помощью наилучшей модели*
+
+```{r fig.width=7, fig.height=8}
+#use model to create prediction intervals
+predictions <- predict(model_3, interval='predict')
+
+#create dataset that contains original data along with prediction intervals
+all_data <- cbind(dataset, predictions)
+
+# RL
+ggplot_RL <- ggplot(all_data, aes(x=RL, y=GE)) + 
+  geom_point() + #add scatterplot points
+  stat_smooth(method=lm) + #confidence bands
+  geom_line(aes(y=lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y=upr), col = "coral2", linetype = "dashed") #upr pred interval
+
+# GDP
+ggplot_GDP <- ggplot(all_data, aes(x=GDP, y=GE)) + 
+  geom_point() + #add scatterplot points
+  stat_smooth(method=lm) + #confidence bands
+  geom_line(aes(y=lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y=upr), col = "coral2", linetype = "dashed") #upr pred interval
+
+# PG
+ggplot_PG <- ggplot(all_data, aes(x=PG, y=GE)) + 
+  geom_point() + #add scatterplot points
+  stat_smooth(method=lm) + #confidence bands
+  geom_line(aes(y=lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y=upr), col = "coral2", linetype = "dashed") #upr pred interval 
+
+# Total
+ggplot_RL / ggplot_GDP / ggplot_PG +  
+  plot_annotation(title = 
+    'Visualization of the forecast using the best model') & 
+     theme(plot.title = element_text(hjust = 0.5, size = 12),
+          axis.title = element_text(size = 9),
+          axis.text = element_text(size = 7))
+```
+
+## *BLOCK 6. Script for best fit OLS regression diagnostics*
+
+### *6.1. Multicollinearity*
+
+Для выявления мультиколлинеарности воспользуемся следующими инструментами:
+
+1.  Расчет матрицы коэффициентов корреляции: параметрических (Пирсона) и непараметрических (Спирмена).
+
+2.  График матрицы диаграмм рассеяния: с помощью функций ***scatterplotMatrix*** и **cpairs**.
+
+3.  График тепловой карты коэффициентов корреляции Пирсона и Спирмена.
+
+4.  Расчет показателя **VIF (variance inflation factor)**.
+
+    #### *Корреляционная матрица*
+
+```{r}
+X <- data.frame(PS, GE, RL, PR, CL, GDP, PG)
+
+# матрица коэффициентов корреляции Пирсона
+corr_matrix_pearson <- round((cor(X,  method='pearson')), 3)
+view(corr_matrix_pearson)
+
+# матрица коэффициентов корреляции Спирмена
+corr_matrix_spearman <- round((cor(X,  method='spearman')), 3)
+view(corr_matrix_spearman)
+```
+
+**Вывод:** между переменными имеются сильные корреляционные связи.
+
+#### *Матрица диаграмм рассеяния (scatterplotMatrix)*
+
+```{r fig.width=7, fig.height=8}
+# install.packages(car)
+library('car')
+
+scatterplotMatrix(
+  #X,
+   ~Political_Stability + Government_Effectiveness + Rule_of_Law + Political_Rights + Civil_Liberties + GDP_per_capita + Population_growth,
+  data=dataset,
+  diagonal=list(method ='histogram',
+                breaks='FD'),
+  #smooth=TRUE,
+  id=TRUE,
+  regLine=list(method=lm, col='#1F78B4'),
+  #ellipse=TRUE,
+  var.labels=c('PS', 'GE', 'RL', 'PR', 'CL', 'GDP', 'PG'),
+  cex.labels=1.5,
+  col='#A6CEE3',
+  main='scatterplotMatrix')
+```
+
+#### *Матрица диаграмм рассеяния (cpairs)*
+
+```{r fig.width=7, fig.height=8}
+# install.packages('gclus')
+library(gclus)
+mycolors <- dmat.color(corr_matrix_pearson)
+myorder <- order.single(corr_matrix_pearson)
+cpairs(X,
+       #myorder,
+       panel.colors=mycolors,
+       cex.labels=0.8,
+       gap=0.5,
+       main='cpairs')
+```
+
+#### *Тепловая карта (heatmap)*
+
+```{r}
+# install.packages('reshape2')
+library(reshape2)
+
+# тепловая карта коэффициентов корреляции Пирсона
+melted_corr_matrix_pearson <- melt(corr_matrix_pearson)
+colnames(melted_corr_matrix_pearson) <- c('var1', 'var2', 'Correlation')
+
+order <- c('PS', 'GE', 'RL', 'PR', 'CL', 'GDP', 'PG')
+
+ggplot(data=melted_corr_matrix_pearson,
+       aes(x=factor(var1, level=order),
+           y=factor(var2, level=rev(order)))) + 
+  geom_tile(aes(fill = Correlation)) + 
+  scale_fill_gradient2(low = muted('blue'),
+                       mid = 'white',
+                       high = muted('red'),
+                       limits = c(-1, 1)) + 
+  geom_text(aes(x=var1, y=var2, label = round(Correlation, 3)),
+            color='black', size=4) + 
+  labs(x='', y='') + 
+  plot_annotation(title = 
+    'Pearson correlation coefficient (heatmap)') & 
+     theme(plot.title = element_text(hjust = 0.5, size = 14),
+           axis.title = element_text(size = 9),
+           axis.text = element_text(size = 9)#,
+           #axis.title.x = element_text(color='white'),
+           #axis.title.y = element_text(color='white')
+           )
+
+# тепловая карта коэффициентов корреляции Спирмена
+melted_corr_matrix_spearman <- melt(corr_matrix_spearman)
+colnames(melted_corr_matrix_spearman) <- c('var1', 'var2', 'Correlation')
+
+ggplot(data=melted_corr_matrix_spearman,
+       aes(x=factor(var1, level=order),
+           y=factor(var2, level=rev(order)))) + 
+  geom_tile(aes(fill = Correlation)) + 
+  scale_fill_gradient2(low = muted('blue'),
+                       mid = 'white',
+                       high = muted('red'),
+                       limits = c(-1, 1)) + 
+  geom_text(aes(x=var1, y=var2, label = round(Correlation, 3)),
+            color='black', size=4) + 
+  labs(x='', y='') + 
+  plot_annotation(title = 
+    'Spearman correlation coefficient (heatmap)') & 
+     theme(plot.title = element_text(hjust = 0.5, size = 14),
+           axis.title = element_text(size = 9),
+           axis.text = element_text(size = 9)#,
+           #axis.title.x = element_text(color='white'),
+           #axis.title.y = element_text(color='white')
+           )
+```
+
+#### Расчет показателя **VIF (variance inflation factor)**
+
+```{r}
+vif(model_3)
+```
+
+Используется следующее эмпирическое правило для интерпретации значений VIF (<https://www.statology.org/multicollinearity-in-r/>):
+
+-   VIF = 1: нет корреляции между данной переменной-предиктором и любыми другими переменными-предикторами в модели;
+
+-   VIF от 1 до 5: существует умеренная корреляция между данной переменной-предиктором и другими переменными-предикторами в модели;
+
+-   VIF \> 5 : Существует сильная корреляция между данной переменной-предиктором и другими переменными-предикторами в модели.
+
+**Вывод:** имеет место умеренная мультиколлинеарность .
+
+### *6.2. Heteroscedasticity*
+
+#### Графический анализ (функция spreadLevelPlot)
+
+Данная функция создает диаграмму рассеяния для абсолютных значений стандартизованных остатков и подобранных значений с наложенной регрессионной прямой:
+
+```{r}
+spreadLevelPlot(model_3)
+```
+
+**Вывод:** т.к. точки примерно располагаются в вдоль горизонтальной регрессионной прямой, можно сделать вывод, что **гетероскедастичноть отсутствует**.
+
+#### *Проверка гипотезы об однородности дисперсии остатков (функция ncvTest)*
+
+Данная функция позволяет проверить гипотезу о постоянстве дисперсии остатков как альтернативу тому, что дисперсия остатков изменяется в зависимости от подобранных значений. Статистически значимый результат (**p \< 0.05**) свидетельствует о гетероскедастичности (неоднородности дисперсии остатков).
+
+```{r}
+ncvTest(model_3)
+```
+
+**Вывод:** т.к. **p = 0.93097 \> 0.05**, то гипотеза о неоднородности дисперсии остатков отклоняется, т.е. **гетероскедастичность отсутствует**.
+
+### *6.3. Outliers*
+
+Предположение о возможном наличии выбросов мы уже делали ранее, анализируя график зависимости невязок от "показателя напряженности" (Residuals vs Leverage), на котором имеются точки вблизи границы расстояния Кука (Cook's distance).
+
+#### Графический анализ
+
+Построим диаграмму размаха по стандартизованным данным:
+
+```{r fig.width=7, fig.height=7}
+X = dataset[c(
+  'Political_Stability',
+  'Government_Effectiveness',
+  'Rule_of_Law',
+  'Political_Rights',
+  'Civil_Liberties',
+  'GDP_per_capita',
+  'Population_growth')]
+
+# выполним стандартизацию исхоных данных
+X_stand <- X %>% mutate_all (~( scale (.) %>% as.vector ))
+X_stand
+
+# проверим результат стандартизации - вычислим среднее значение и среднеквадратическое отклонение по всем переменным
+cat(apply(X_stand, 2, mean), '\n')
+cat(apply(X_stand, 2, sd))
+
+# построим диаграмму размаха по стандартизоаванным данным
+boxplot(
+  X_stand,
+  horizontal=TRUE,
+  col = 'lightblue',
+  #notch = TRUE,    # доверительный интервал для медианы
+  names = c('PS', 'GE', 'RL', 'PR', 'CL', 'GDP', 'PG'),
+  main='Boxplot on standardized data')
+stripchart(X, method = "jitter", pch = 19, add = TRUE, col = "#1F78B4")
+```
+
+**Вывод:** видим, что отдельные наблюдения выходят за границы интерквартильного размаха на диаграмме, поэтому они могут являтьсяч выбросами. Необходимо проверка гипотезы о наличии выбросов.
+
+#### Функциея **outlierTest**
+
+Для проверки гипотезы о наличии выбросов воспользуемся функцией **outlierTest**, которая вычисляет значение вероятности статистической ошибки первого рода с поправкой Бонферрони для наибольшего остатка Стьюдента:
+
+```{r}
+outlierTest(model_3)
+```
+
+**Вывод:** гипотеза о наличии выбросов отклоняется.
+
+Примечание: исследование выбросов -- это весьма непростая процедура, которая требует учитывать как закон распределения исходных данных, так и содержательный характер самих исходных данных (отдельные наблюдения могут быть определены как выбросы на основании статистических критериев, но по своему содержательному характеру выбросами не являться), при решении этой задачи вреден как излишний формализм, так и принятие решений «на глазок».
+
+### *6.4. Influential observations*
+
+Влиятельные наблюдения -- это наблюдения, которые оказывают непропорционально большое влияние на значения параметров модели.
+
+Критерий выявления влиятельных наблюдений - **расстояние Кука**.
+
+Для визуализации влиятельных наблюдений имеется несколько инструментов:
+
+-   диаграмма расстояний Кука;
+
+-   диаграмма добавленных переменных;
+
+-   диаграмма влияния.
+
+#### Диаграмма расстояний Кука
+
+```{r}
+cutoff <- 4/(nrow(dataset)-length(model_3$coefficients)-2)
+plot(model_3, which=4, cook.levels=cutoff)
+abline(h=cutoff, lty=2, col='red')
+```
+
+#### Диаграмма добавленных переменных
+
+```{r}
+avPlots(model_3,
+        ask=FALSE,
+        #onepage=TRUE,
+        # id.method='identify'
+        )
+```
+
+#### Диаграмма влияния
+
+```{r}
+influencePlot(
+  model_3,
+  #id.method='identify',
+  main='Influence Diagram',
+  sub="The size of the circle is proportional to the Cook's distance")
+```
+
+```{r}
+influence.measures(model_3)
+```
+
+**Вывод:** значения с индексами 2, 96, 138 могут быть расценены как влиятельные наблюдения и должны быть удалены.
+
+```{r}
+row_number_clear <- c(2, 96, 138)
+dataset_without_influential_observations <- dataset[-c(row_number_clear), ]
+view(dataset_without_influential_observations)
+str(dataset_without_influential_observations)
+```
+
+### *6.5. Non-linearity analysis*
+
+Наличие нелинейной связи между зависимой и независимыми переменными можно проверить при помощи **диаграмм компонент и остатков** (также известных под названием **диаграммы частных остатков**) (функция **crPlots**).
+
+```{r fig.width=7, fig.height=7}
+crPlots(model_3)
+```
+
+**Вывод:** диаграммы частных остатков, а также высокие значения коэффициентов корреляции (см. выше график тепловой карты) позволяют сделать вывод о линейности связи.
+
+### *6.6. Interaction effect*
+
+#### *Model 4*
+
+Построим модель со всеми возможными взаимодействиями переменных и сравним ее с аддитивной моделью **model_3**:
+
+```{r}
+model_4 <- lm(GE ~ PS*RL*GDP*PG)
+summary(model_4)
+
+cat("Akaike information criterion (AIC) = ", AIC(model_4), '\n')
+cat("Bayes Information Criterion (BIC) = ", BIC(model_4))
+```
+
+```{r fig.width=7, fig.height=7}
+# графики
+par(mfrow = (c(2, 2)))
+plot(model_4)
+```
+
+Видим, что в модели имеется значительное число незначимых коэффициентов регрессии.
+
+#### *Model 5*
+
+Удалим из модели все незначимые переменные и взаимодействия:
+
+```{r}
+model_5 <- lm(GE ~ PS*RL*GDP*PG - PS - PG - PS:RL - PS:PG - RL:PG - PS:RL:PG)
+summary(model_5)
+
+cat("Akaike information criterion (AIC) = ", AIC(model_5), '\n')
+cat("Bayes Information Criterion (BIC) = ", BIC(model_5))
+```
+
+**Выводы по модели:**
+
+1.  Модель обеспечивает хорошее качество аппроксимации: **Adjusted R-squared: 0.9155**, модель объясняет 91.55% вариации результативного признака **GE**.
+2.  Проверка гипотезы о значимости коэффициента **R2** (по F-критерию): **гипотеза принимается** (т.к. **p-value: \< 2.2e-16**).
+3.  Проверка гипотезы о значимости коэффициентов регрессии (по t-критерию): **значимыми** являются все регрессионные коэффициенты при переменных и взаимодействиях (т.к. **Pr(\>\|t\|) \<= 0.05**).
+4.  Направление связи между результативный признаком и независимыми переменными:
+    -   положительное - для переменных **RL**, **GDP** и взаимодействий **PS:RL:GDP**, **PS:GDP:PG**, **RL:GDP:PG**;
+
+    -   отрицательное - для взаимодействий **PS:GDP**, **RL:GDP**, **GDP:PG**, **PS:RL:GDP:PG**.
+
+```{r fig.width=7, fig.height=7}
+# графики
+par(mfrow = (c(2, 2)))
+plot(model_5)
+```
+
+Проверка нормальности распределения остатков:
+
+```{r}
+X <- resid(model_5)
+
+h <- hist(X,
+     breaks = 'Sturges',    # Sturges, scott, FD
+     #freq = FALSE,
+     col = 'lightblue',
+     xlab = '',
+     ylab = 'Dencity',
+     main = 'Residuals')
+#lines(density(X), col = 'red', lwd = 2)
+xfit <- seq(min(X), max(X), length=40)
+yfit <- dnorm(xfit, mean=mean(X), sd=sd(X))
+yfit <- yfit*diff(h$mids[1:2])*length(X)
+lines(xfit, yfit, col='red', lwd=2)
+box()
+```
+
+```{r}
+residplot(model_5)
+```
+
+```{r}
+norm_check(X)
+```
+
+**Вывод:** гипотеза о нормальности распределения остатков **принимается**.
+
+#### *Сравнение аддитивной модели и модели со взаимодействиями*
+
+Сравним построенные модели: аддитивную **model_3** и модель со взаимодействиями **model_5**:
+
+```{r}
+model_name_list <- c('model_3', 'model_5')
+
+RSE_list <- c(summary(model_3)$sigma,
+              summary(model_5)$sigma)
+
+R2_adj_list <- c(summary(model_3)$adj.r.squared,
+                 summary(model_5)$adj.r.squared)
+
+AIC_list <- c(AIC(model_3),
+              AIC(model_5))
+
+BIC_list <- c(BIC(model_3),
+              BIC(model_5))
+
+regression_result <- data.frame(
+  model_name = model_name_list,
+  RSE = RSE_list,
+  R2_adj = R2_adj_list,
+  AIC = AIC_list,
+  BIC = BIC_list)
+
+regression_result
+
+#View(descriptive_stats_of_dataset)
+#str(descriptive_stats_of_dataset)
+```
+
+**Вывод:** видим, что модель со взаимодействиями **model_5** практически не имеет преимущества по метрикам качества (**RSE**, **R2_adj**) перед аддитивной моделью **model_3**, но из-за своей сложности ухудшает критерии **AIC** и **BIC,** таким образом не имеет практического смысла в использовании модели со взаимодействиями, поэтому в качестве наилучшей модели выбираем **model_3.**
+
+## *BLOCK 7. Script for building visualizations*
+
+### *Plot 4. Interplot*
+
+```{r}
+##install.packages("interactions")
+library(interactions)
+
+#sim_slopes(model_4, pred=GDP, modx=PG, jnplot = TRUE)
+interact_plot(model_4, pred = PS, modx = GDP, interval = TRUE)
+interact_plot(model_4, pred = RL, modx = GDP, interval = TRUE)
+```
+
+### *Plot 5. Johnson-Neyman interval plot*
+
+```{r}
+johnson_neyman(model_4, pred=PS, modx=GDP)
+johnson_neyman(model_4, pred=RL, modx=GDP)
+```
+
+### *Plot 6. Q-Q plot*
+
+```{r}
+qqPlot(
+  model_5,
+  #labels=row.names(states),
+  id.method='identify',
+  simulate=TRUE,
+  main='Q-Q Plot')
+```
+
+### *Plot 7. crPlot*
+
+<https://cran.r-project.org/web/packages/conf/vignettes/crplot.html>
+
+```{r fig.width=7, fig.height=8}
+#install.packages('conf')
+library(conf)
+par(mfrow = c(4, 2))
+crplot(dataset=X1, alpha=a_level, distn='norm')
+crplot(dataset=X2, alpha=a_level, distn='norm')
+crplot(dataset=X3, alpha=a_level, distn='norm')
+crplot(dataset=X4, alpha=a_level, distn='norm')
+crplot(dataset=X5, alpha=a_level, distn='norm')
+crplot(dataset=X6, alpha=a_level, distn='norm')
+crplot(dataset=X7, alpha=a_level, distn='norm')
+
+```
+
+```{r}
+end.time <- Sys.time()
+cat('Общее время выполнения расчетов: ', end.time - start.time, ' с')
+```
