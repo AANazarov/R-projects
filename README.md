@@ -1,4 +1,5 @@
-<p align='center'> <img src = 'https://www.r-project.org/logo/Rlogo.png' width='300'> </p>
-## R-projects
+<img src = 'https://www.r-project.org/logo/Rlogo.png' width='70'> </p>
+# <font size='5'>*Alexander A. Nazarov, 2023*
+***
 
  
